@@ -21,7 +21,7 @@ async function processAndSendData() {
     } catch (error) {
       console.error('❌ [RealtimeService] Error processing real-time tracking data:', error.message);
     }
-  }, 5000); // Kirim data setiap 5 detik
+  }, 1000); // Kirim data setiap 5 detik
 }
 
 module.exports = { processAndSendData };
