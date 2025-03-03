@@ -22,12 +22,12 @@ udpServer.on('message', async (msg, rinfo) => {
       trackingController.handleTracking(finalPayload);
     }
   } catch (error) {
-    console.error(`❌ [UDP] Error processing data: ${error.message}`);
+    console.error(`[UDP] Error processing data: ${error.message}`);
   }
 });
 
 udpServer.bind(PORT, () => {
-  console.log(`📡 [UDP] Server listening on port ${PORT}`);
+  console.log(`[UDP] Server listening on port ${PORT}`);
 });
 
 /**
