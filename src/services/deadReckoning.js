@@ -1,77 +1,76 @@
-const Station = require('../models/stationModel');
+// src/services/deadReckoning.js
+const stationModel = require('../models/stationModel'); // Atau gunakan stationService jika ada
 const { haversineDistance } = require('../utils/haversineDistance');
 
-let lastKnownPosition = null; // Simpan posisi terakhir saat GPS tersedia
-let lastUpdateTime = null; // Simpan timestamp terakhir saat GPS tersedia
+async function processData(sensorData) {
+  try {
+    if (!sensorData) return null;
 
-/**
- * Menentukan lokasi berdasarkan data terbaru atau prediksi
- */
-async function getEstimatedPosition(lat, lon, speed, heading) {
-  const currentTime = Date.now();
-  
-  if (lat && lon) {
-    // Jika GPS tersedia, simpan posisi terakhir
-    lastKnownPosition = { lat, lon };
-    lastUpdateTime = currentTime;
-    return { lat, lon, source: 'GPS' };
-  }
+    // Pilih kecepatan: gunakan accelero_speed jika > 0, jika tidak gunakan gps_speed
+    // const speed = sensorData.accelero_speed > 0 ? sensorData.accelero_speed : sensorData.gps_speed;
+    const speed = sensorData.gps_speed > 0 ? sensorData.gps_speed : sensorData.accelero_speed;
+    const heading = sensorData.magnetometer_heading || 0;
 
-  if (!lastKnownPosition) {
-    return { lat: null, lon: null, source: 'UNKNOWN' }; // Tidak bisa diprediksi tanpa data sebelumnya
-  }
+    // Ambil stasiun aktif dari database
+    const stations = await stationModel.findAll({ where: { active: true } });
 
-  // Jika GPS hilang, gunakan dead reckoning berdasarkan speed & heading terakhir
-  const timeElapsed = (currentTime - lastUpdateTime) / 1000; // Waktu dalam detik
-  const distanceTraveled = (speed / 3.6) * timeElapsed; // Konversi km/h ke m/s lalu hitung jarak
+    let bestStation = null;
+    let bestETA = Infinity;
+    let bestDistance = null;
 
-  const earthRadius = 6371000; // Radius bumi dalam meter
-  const headingRad = (heading * Math.PI) / 180; // Konversi heading ke radian
+    stations.forEach(station => {
+      const distance = haversineDistance(sensorData.gps_lat, sensorData.gps_lon, station.latitude, station.longitude);
+      if (speed > 0) {
+        const eta = (distance / speed) / 60; // ETA dalam menit
+        if (eta < bestETA) {
+          bestETA = eta;
+          bestStation = station;
+          bestDistance = distance;
+        }
+      }
+    });
 
-  // Perkiraan latitude dan longitude baru
-  const estimatedLat = lastKnownPosition.lat + (distanceTraveled / earthRadius) * (180 / Math.PI) * Math.cos(headingRad);
-  const estimatedLon = lastKnownPosition.lon + (distanceTraveled / earthRadius) * (180 / Math.PI) * Math.sin(headingRad) / Math.cos(lastKnownPosition.lat * Math.PI / 180);
+    const timestamp = new Date().toISOString();
 
-  return { lat: estimatedLat, lon: estimatedLon, source: 'DEAD_RECKONING' };
-}
-
-/**
- * Menentukan stasiun terdekat berdasarkan posisi yang tersedia
- */
-async function calculateNearestStation(lat, lon, speed, heading) {
-  const estimatedPos = await getEstimatedPosition(lat, lon, speed, heading);
-
-  if (!estimatedPos.lat || !estimatedPos.lon) {
-    return {
-      station_id: null,
-      station_name: "Unknown",
-      distance: "N/A",
-      eta_minutes: "N/A",
-      position_source: estimatedPos.source
+    // Buat objek finalPayload sesuai format yang diinginkan
+    const finalPayload = {
+      device_id: sensorData.device_id || "UNKNOWN",
+      tracking: {
+        timestamp: timestamp,
+        position: {
+          speed: speed,
+          heading: heading,
+          source: "SENSOR"
+        },
+        prediction: {
+          station_id: bestStation ? bestStation.id : null,
+          station_name: bestStation ? bestStation.name : "Unknown",
+          distance: bestStation ? Math.round(bestDistance) : "N/A",
+          eta_minutes: bestStation ? Math.round(bestETA) : "N/A"
+        }
+      },
+      raw_data: {
+        device_id: sensorData.device_id || "UNKNOWN",
+        gps_lat: sensorData.gps_lat,
+        gps_lon: sensorData.gps_lon,
+        gps_alt: sensorData.gps_alt,
+        gps_speed: sensorData.gps_speed,
+        accelero_speed: sensorData.accelero_speed,
+        accelero_ax: sensorData.accelero_ax,
+        accelero_ay: sensorData.accelero_ay,
+        accelero_az: sensorData.accelero_az,
+        accelero_gx: sensorData.accelero_gx,
+        accelero_gy: sensorData.accelero_gy,
+        accelero_gz: sensorData.accelero_gz,
+        magnetometer_heading: sensorData.magnetometer_heading
+      }
     };
+
+    return finalPayload;
+  } catch (error) {
+    console.error("Error in deadReckoning processData:", error);
+    return null;
   }
-
-  const stations = await Station.findAll();
-  let nearestStation = null;
-  let minDistance = Infinity;
-
-  for (const station of stations) {
-    const distance = haversineDistance(estimatedPos.lat, estimatedPos.lon, station.latitude, station.longitude);
-    if (distance < minDistance) {
-      minDistance = distance;
-      nearestStation = station;
-    }
-  }
-
-  const eta_minutes = speed > 0 ? Math.round(minDistance / (speed / 3.6)) : "Unknown";
-
-  return {
-    station_id: nearestStation ? nearestStation.id : null,
-    station_name: nearestStation ? nearestStation.name : "Unknown",
-    distance: minDistance.toFixed(2),
-    eta_minutes,
-    position_source: estimatedPos.source
-  };
 }
 
-module.exports = { calculateNearestStation };
+module.exports = { processData };

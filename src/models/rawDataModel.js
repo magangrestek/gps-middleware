@@ -4,9 +4,11 @@ const sequelize = require('../config/database');
 const RawData = sequelize.define('raw_data', {
   id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
   log_time: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+  sensor_id: { type: DataTypes.STRING, allowNull: true },
   gps_lat: { type: DataTypes.DOUBLE, allowNull: false, defaultValue: 0.0 },
   gps_lon: { type: DataTypes.DOUBLE, allowNull: false, defaultValue: 0.0 },
   gps_alt: { type: DataTypes.DOUBLE, allowNull: false, defaultValue: 0.0 },
+  gps_speed: { type: DataTypes.DOUBLE, allowNull: false, defaultValue: 0.0 },
   accelero_ax: { type: DataTypes.DOUBLE, allowNull: false, defaultValue: 0.0 },
   accelero_ay: { type: DataTypes.DOUBLE, allowNull: false, defaultValue: 0.0 },
   accelero_az: { type: DataTypes.DOUBLE, allowNull: false, defaultValue: 0.0 },

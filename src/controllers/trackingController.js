@@ -1,45 +1,44 @@
-const { calculateNearestStation } = require('../services/deadReckoning');
+const deadReckoning = require('../services/deadReckoning');
 
-let latestTrackingData = null; // Menyimpan data terbaru untuk dikirim ke cloud
+// Variabel global untuk menyimpan data tracking terakhir
+let latestTrackingData = null;
 
-exports.getTrackingPrediction = async (req, res) => {
+// Fungsi untuk memperbarui data tracking terbaru
+function updateLatestTrackingData(payload) {
+  latestTrackingData = payload;
+  console.log("[TrackingController] Latest tracking data updated:", latestTrackingData);
+}
+
+// Fungsi untuk mengambil data tracking terbaru
+function getLatestTrackingData() {
+  return latestTrackingData;
+}
+
+// Fungsi yang digunakan untuk endpoint REST (jika ada)
+async function getTrackingPrediction(req, res) {
   try {
-    const { lat, lon, speed, heading } = req.query;
-
-    const result = await calculateNearestStation(
-      lat ? parseFloat(lat) : null,
-      lon ? parseFloat(lon) : null,
-      parseFloat(speed) || 0,
-      parseFloat(heading) || 0
-    );
-
-    const trackingData = {
-      tracking: {
-        timestamp: new Date().toISOString(),
-        position: {
-          latitude: result.position_source === 'GPS' ? parseFloat(lat) : result.lat,
-          longitude: result.position_source === 'GPS' ? parseFloat(lon) : result.lon,
-          speed: parseFloat(speed) || 0,
-          heading: parseFloat(heading) || 0,
-          source: result.position_source
-        },
-        prediction: {
-          station_id: result.station_id,
-          station_name: result.station_name,
-          distance: result.distance,
-          eta_minutes: result.eta_minutes
-        }
-      }
-    };
-
-    latestTrackingData = trackingData; // Simpan data terbaru
-
-    res.json(trackingData);
+    const tracking = getLatestTrackingData();
+    if (tracking) {
+      res.json(tracking);
+    } else {
+      res.status(404).json({ error: 'No tracking data available' });
+    }
   } catch (error) {
-    console.error('❌ Error in tracking prediction:', error);
-    res.status(500).json({ error: 'Failed to calculate tracking prediction' });
+    console.error("[TrackingController] Error fetching tracking data:", error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-};
+}
 
-// Fungsi untuk mendapatkan data tracking terbaru
-exports.getLatestTrackingData = () => latestTrackingData;
+// Fungsi handleTracking untuk dipanggil dari udpService atau service lain
+function handleTracking(finalPayload) {
+  console.log("[TrackingController] Handling tracking payload:", finalPayload);
+  // Update data tracking terbaru
+  updateLatestTrackingData(finalPayload);
+  // Anda juga dapat menambahkan logika tambahan di sini, misalnya penyimpanan ke database
+}
+
+module.exports = { 
+  getTrackingPrediction,
+  getLatestTrackingData,  // pastikan fungsi ini di-export
+  handleTracking 
+};
