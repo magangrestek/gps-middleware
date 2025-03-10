@@ -55,7 +55,10 @@ async function processData(sensorData) {
       }
     });
 
-    const timestamp = new Date().toISOString();
+    const waktu = new Date();
+    const offset = 7 * 60 * 60 * 1000; // 7 jam dalam milidetik
+    const timestamp = new Date(waktu.getTime() + offset).toISOString();
+
     const finalPayload = {
       device_id: sensorData.device_id || "UNKNOWN",
       tracking: {
