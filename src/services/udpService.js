@@ -2,6 +2,7 @@
 const dgram = require('dgram');
 const deadReckoning = require('./deadReckoning');
 const trackingController = require('../controllers/trackingController');
+const sensorDataService = require('./sensorDataService'); // Pastikan file ini ada dan sudah diimplementasikan
 
 const udpServer = dgram.createSocket('udp4');
 const PORT = process.env.UDP_PORT || 1338;
@@ -14,10 +15,14 @@ udpServer.on('message', async (msg, rinfo) => {
     // 1. Parse data ke objek sensorData
     const sensorData = parseSensorData(dataString);
 
-    // 2. Jalankan dead reckoning untuk menghasilkan payload final
+    // 2. Simpan data mentah (raw data) ke database
+    await sensorDataService.storeRawData(sensorData, dataString);
+    console.log(`✅ [UDP] Raw data stored successfully!`);
+
+    // 3. Jalankan dead reckoning untuk menghasilkan payload final
     const finalPayload = await deadReckoning.processData(sensorData);
 
-    // 3. Jika payload final tersedia, panggil controller untuk menindaklanjuti
+    // 4. Jika payload final tersedia, panggil controller untuk menindaklanjuti
     if (finalPayload) {
       trackingController.handleTracking(finalPayload);
     }
