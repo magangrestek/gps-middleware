@@ -6,10 +6,15 @@ const { haversineDistance } = require('../utils/haversineDistance');
 let lastKnownPosition = { lat: 0, lon: 0 };
 let lastUpdateTime = Date.now();
 
+// Tambahkan di bagian atas file
+const MAX_DATA_AGE = 10000; // 10 detik
+let lastRawDataTime = Date.now();
+
 async function processData(sensorData) {
   try {
     if (!sensorData) return null;
-
+    // Update waktu penerimaan data mentah
+    lastRawDataTime = Date.now();
     // Hitung deltaTime (s) sejak update terakhir
     const now = Date.now();
     const deltaTime = (now - lastUpdateTime) / 1000; // ms -> s
@@ -101,6 +106,11 @@ async function processData(sensorData) {
   }
 }
 
+// Tambahkan fungsi untuk mengecek keaktifan koneksi
+function isConnectionActive() {
+  return (Date.now() - lastRawDataTime) < MAX_DATA_AGE;
+}
+
 /**
  * Contoh fungsi sederhana untuk estimasi posisi dari IMU
  */
@@ -121,4 +131,4 @@ function estimatePositionFromIMU(lastPos, sensorData, deltaTime) {
   return { lat: newLat, lon: newLon };
 }
 
-module.exports = { processData };
+module.exports = { processData, isConnectionActive};
