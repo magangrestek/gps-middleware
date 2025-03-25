@@ -1,23 +1,31 @@
 // src/services/deadReckoning.js
-const stationModel = require('../models/stationModel'); // Atau gunakan stationService jika ada
+const stationModel = require('../models/stationModel'); 
 const { haversineDistance } = require('../utils/haversineDistance');
+
+// Tambahkan cache untuk tracking terakhir
+let lastProcessedData = null;
 
 async function processData(sensorData) {
   try {
     if (!sensorData) return null;
-
-    // Pilih kecepatan: gunakan accelero_speed jika > 0, jika tidak gunakan gps_speed
-    // const speed = sensorData.accelero_speed > 0 ? sensorData.accelero_speed : sensorData.gps_speed;
+    
+    // Periksa apakah data sensor ini persis sama dengan data terakhir
+    if (lastProcessedData && isSameData(sensorData, lastProcessedData)) {
+      console.log("[DeadReckoning] Duplicate sensor data detected, skipping processing");
+      return null; // Skip pemrosesan untuk data duplikat
+    }
+    
+    // Pilih kecepatan: gunakan gps_speed jika > 0, jika tidak gunakan accelero_speed
     const speed = sensorData.gps_speed > 0 ? sensorData.gps_speed : sensorData.accelero_speed;
     const heading = sensorData.magnetometer_heading || 0;
-
+    
     // Ambil stasiun aktif dari database
     const stations = await stationModel.findAll({ where: { active: true } });
-
+    
     let bestStation = null;
     let bestETA = Infinity;
     let bestDistance = null;
-
+    
     stations.forEach(station => {
       const distance = haversineDistance(sensorData.gps_lat, sensorData.gps_lon, station.latitude, station.longitude);
       if (speed > 0) {
@@ -29,14 +37,18 @@ async function processData(sensorData) {
         }
       }
     });
-
+    
+    // Buat timestamp dengan presisi tinggi
     const waktu = new Date();
     const offset = 7 * 60 * 60 * 1000; // 7 jam dalam milidetik
     const timestamp = new Date(waktu.getTime() + offset).toISOString();
-
-
+    
+    // Tambahkan unique ID untuk setiap tracking
+    const trackingId = `${sensorData.device_id || "UNKNOWN"}_${Date.now()}`;
+    
     // Buat objek finalPayload sesuai format yang diinginkan
     const finalPayload = {
+      tracking_id: trackingId, // Tambahkan ID unik
       device_id: sensorData.device_id || "UNKNOWN",
       tracking: {
         timestamp: timestamp,
@@ -68,12 +80,30 @@ async function processData(sensorData) {
         magnetometer_heading: sensorData.magnetometer_heading
       }
     };
-
+    
+    // Simpan data yang baru diproses
+    lastProcessedData = {...sensorData};
+    
+    // Log data untuk debugging
+    console.log(`[DeadReckoning] Generated tracking_id: ${trackingId}`);
+    
     return finalPayload;
   } catch (error) {
     console.error("Error in deadReckoning processData:", error);
     return null;
   }
+}
+
+// Fungsi untuk memeriksa apakah dua data sensor sama
+function isSameData(newData, oldData) {
+  // Bandingkan nilai-nilai penting
+  return (
+    newData.gps_lat === oldData.gps_lat &&
+    newData.gps_lon === oldData.gps_lon &&
+    newData.gps_speed === oldData.gps_speed &&
+    newData.accelero_speed === oldData.accelero_speed &&
+    newData.magnetometer_heading === oldData.magnetometer_heading
+  );
 }
 
 module.exports = { processData };

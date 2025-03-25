@@ -4,6 +4,7 @@ const RawData = require('../models/rawDataModel');
 async function storeRawData(sensorData, rawMessage) {
   try {
     await RawData.create({
+      log_time: new Date(Date.now() + 7 * 3600000), // Set log_time ke WIB (UTC+7)
       sensor_id: sensorData.device_id || "UNKNOWN",
       gps_lat: sensorData.gps_lat,
       gps_lon: sensorData.gps_lon,
