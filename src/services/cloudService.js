@@ -1,8 +1,16 @@
 const axios = require('axios');
+const deadReckoning = require('./deadReckoning'); // Tambahkan ini
 require('dotenv').config();
 
 async function sendToCloud(data) {
   try {
+
+        // Periksa apakah koneksi UDP masih aktif sebelum mengirim ke cloud
+    if (!deadReckoning.isConnectionActive()) {
+      console.log("[Cloud] Skipping send to cloud: No active UDP connection");
+      return null;
+    }
+
     console.log(`[Cloud] Sending data to cloud at: ${process.env.CLOUD_ENDPOINT}`);
     console.log('[Cloud] Payload:', JSON.stringify(data, null, 2));
 
