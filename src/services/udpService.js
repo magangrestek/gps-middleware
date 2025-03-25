@@ -7,6 +7,14 @@ const sensorDataService = require('./sensorDataService'); // Pastikan file ini a
 const udpServer = dgram.createSocket('udp4');
 const PORT = process.env.UDP_PORT || 1338;
 
+// Tambahkan interval untuk memeriksa koneksi
+setInterval(() => {
+  if (!deadReckoning.isConnectionActive()) {
+    console.log("[UDP] No active connection detected in the last 10 seconds, stopping cloud updates");
+    // Opsional: kirim notifikasi bahwa koneksi terputus
+  }
+}, 5000); // Periksa setiap 5 detik
+
 udpServer.on('message', async (msg, rinfo) => {
   try {
     const dataString = msg.toString();

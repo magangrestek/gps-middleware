@@ -4,10 +4,14 @@ const { haversineDistance } = require('../utils/haversineDistance');
 
 // Tambahkan cache untuk tracking terakhir
 let lastProcessedData = null;
+let lastDataReceivedTime = Date.now();
+const MAX_DATA_AGE = 10000; // 10 detik
 
 async function processData(sensorData) {
   try {
     if (!sensorData) return null;
+
+    lastDataReceivedTime = Date.now();
     
     // Periksa apakah data sensor ini persis sama dengan data terakhir
     if (lastProcessedData && isSameData(sensorData, lastProcessedData)) {
@@ -106,4 +110,9 @@ function isSameData(newData, oldData) {
   );
 }
 
-module.exports = { processData };
+// Fungsi untuk memeriksa apakah koneksi masih aktif
+function isConnectionActive() {
+  return (Date.now() - lastDataReceivedTime) < MAX_DATA_AGE;
+}
+
+module.exports = { processData, isConnectionActive };
