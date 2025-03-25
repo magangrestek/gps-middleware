@@ -43,6 +43,7 @@ udpServer.bind(PORT, () => {
 function parseSensorData(dataString) {
   const segments = dataString.split('|').map(s => s.trim());
   
+  // Buat objek dengan nilai default
   const sensorData = {
     device_id: null,
     gps_lat: 0,
@@ -56,34 +57,56 @@ function parseSensorData(dataString) {
     accelero_gx: 0,
     accelero_gy: 0,
     accelero_gz: 0,
-    magnetometer_heading: 0
+    magnetometer_heading: 0,
+    parse_time: new Date().toISOString() // Tambahkan timestamp saat parsing
   };
 
+  // Log data mentah untuk debugging
+  console.log(`[parseSensorData] Raw segments:`, segments);
+  
   segments.forEach(segment => {
     if (segment.startsWith('id:')) {
       sensorData.device_id = segment.substring(3).replace(',', '').trim();
     } else if (segment.startsWith('gps:')) {
-      const [lat, lon, alt] = segment.substring(4).split(',');
-      sensorData.gps_lat = parseFloat(lat) || 0;
-      sensorData.gps_lon = parseFloat(lon) || 0;
-      sensorData.gps_alt = parseFloat(alt) || 0;
+      const gpsValues = segment.substring(4).split(',');
+      // Hanya gunakan nilai GPS jika bukan 0,0,0
+      const lat = parseFloat(gpsValues[0]) || 0;
+      const lon = parseFloat(gpsValues[1]) || 0;
+      const alt = parseFloat(gpsValues[2]) || 0;
+      
+      // Jika GPS menunjukkan 0,0,0 dan itu jelas tidak valid (karena perangkat tidak di tengah lautan)
+      const isValidGPS = (lat !== 0 || lon !== 0);
+      
+      if (isValidGPS) {
+        sensorData.gps_lat = lat;
+        sensorData.gps_lon = lon;
+        sensorData.gps_alt = alt;
+        console.log(`[parseSensorData] Valid GPS: ${lat}, ${lon}, ${alt}`);
+      } else {
+        console.log(`[parseSensorData] Invalid GPS values (0,0,0) received, not updating GPS coordinates`);
+      }
     } else if (segment.startsWith('gps_speed:')) {
       sensorData.gps_speed = parseFloat(segment.substring(10)) || 0;
     } else if (segment.startsWith('accel_speed:')) {
       sensorData.accelero_speed = parseFloat(segment.substring(12)) || 0;
     } else if (segment.startsWith('accelero:')) {
-      const [ax, ay, az, gx, gy, gz] = segment.substring(9).split(',');
-      sensorData.accelero_ax = parseFloat(ax) || 0;
-      sensorData.accelero_ay = parseFloat(ay) || 0;
-      sensorData.accelero_az = parseFloat(az) || 0;
-      sensorData.accelero_gx = parseFloat(gx) || 0;
-      sensorData.accelero_gy = parseFloat(gy) || 0;
-      sensorData.accelero_gz = parseFloat(gz) || 0;
+      const accelValues = segment.substring(9).split(',');
+      if (accelValues.length >= 6) {
+        sensorData.accelero_ax = parseFloat(accelValues[0]) || 0;
+        sensorData.accelero_ay = parseFloat(accelValues[1]) || 0;
+        sensorData.accelero_az = parseFloat(accelValues[2]) || 0;
+        sensorData.accelero_gx = parseFloat(accelValues[3]) || 0;
+        sensorData.accelero_gy = parseFloat(accelValues[4]) || 0;
+        sensorData.accelero_gz = parseFloat(accelValues[5]) || 0;
+      }
     } else if (segment.startsWith('magnetometer:')) {
       sensorData.magnetometer_heading = parseFloat(segment.substring(13)) || 0;
     }
   });
-
+  
+  // Log hasil parsing untuk debugging
+  console.log(`[parseSensorData] Parsed data:`, JSON.stringify(sensorData, null, 2));
+  
   return sensorData;
 }
 
