@@ -14,10 +14,10 @@ async function processData(sensorData) {
     lastDataReceivedTime = Date.now();
     
     // Periksa apakah data sensor ini persis sama dengan data terakhir
-    if (lastProcessedData && isSameData(sensorData, lastProcessedData)) {
-      console.log("[DeadReckoning] Duplicate sensor data detected, skipping processing");
-      return null; // Skip pemrosesan untuk data duplikat
-    }
+    // if (lastProcessedData && isSameData(sensorData, lastProcessedData)) {
+    //   console.log("[DeadReckoning] Duplicate sensor data detected, skipping processing");
+    //   return null; // Skip pemrosesan untuk data duplikat
+    // }
     
     // Pilih kecepatan: gunakan gps_speed jika > 0, jika tidak gunakan accelero_speed
     const speed = sensorData.gps_speed > 0 ? sensorData.gps_speed : sensorData.accelero_speed;

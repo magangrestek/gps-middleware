@@ -44,21 +44,58 @@ async function processData(sensorData) {
     // Ambil stasiun aktif
     const stations = await stationModel.findAll({ where: { active: true } });
 
-    let bestStation = null;
-    let bestETA = Infinity;
-    let bestDistance = null;
-
-    stations.forEach(station => {
+    // Menghitung jarak ke semua stasiun
+    const stationDistances = stations.map(station => {
       const distance = haversineDistance(currentLat, currentLon, station.latitude, station.longitude);
-      if (speed > 0) {
-        const eta = (distance / speed) / 60;
-        if (eta < bestETA) {
-          bestETA = eta;
-          bestStation = station;
-          bestDistance = distance;
-        }
-      }
+      return {
+        station,
+        distance,
+        eta: speed > 0 ? (distance / speed) / 60 : Infinity // ETA dalam menit
+      };
     });
+    
+    // Urutkan stasiun berdasarkan jarak terdekat
+    stationDistances.sort((a, b) => a.distance - b.distance);
+    
+    let currentStation = stationDistances[0]; // Stasiun terdekat
+    let nextStation = stationDistances[1] || null; // Stasiun terdekat kedua (jika ada)
+    let isArrived = false;
+    
+    
+    if (speed < 1 && currentStation.distance < 100) {
+      isArrived = true;
+      console.log(`[DeadReckoning] ARRIVAL DETECTED at station ${currentStation.station.name}! Speed: ${speed.toFixed(2)} km/h, Distance: ${currentStation.distance.toFixed(2)} m`);
+      
+      // Jika sudah tiba, gunakan stasiun berikutnya untuk prediksi
+      if (nextStation) {
+        console.log(`[DeadReckoning] Next station will be ${nextStation.station.name}, distance: ${nextStation.distance.toFixed(2)} m`);
+      } else {
+        console.log(`[DeadReckoning] No next station available, this might be the final destination`);
+      }
+    }
+    
+    // Pilih stasiun dan data untuk prediksi
+    let stationName, stationId, stationDistance, stationETA;
+    
+    if (isArrived && nextStation) {
+      // Jika sudah tiba dan ada stasiun berikutnya
+      stationName = `ARRIVED at ${currentStation.station.name}, Next: ${nextStation.station.name}`;
+      stationId = nextStation.station.id;
+      stationDistance = Math.round(nextStation.distance);
+      stationETA = Math.round(nextStation.eta);
+    } else if (isArrived) {
+      // Jika sudah tiba tapi tidak ada stasiun berikutnya
+      stationName = `ARRIVED at ${currentStation.station.name} (Final Station)`;
+      stationId = currentStation.station.id;
+      stationDistance = Math.round(currentStation.distance);
+      stationETA = 0;
+    } else {
+      // Jika belum tiba
+      stationName = currentStation.station.name;
+      stationId = currentStation.station.id;
+      stationDistance = Math.round(currentStation.distance);
+      stationETA = Math.round(currentStation.eta);
+    }
 
     const waktu = new Date();
     const offset = 7 * 60 * 60 * 1000; // 7 jam dalam milidetik
@@ -75,14 +112,13 @@ async function processData(sensorData) {
             ? "GPS" : "DEAD_RECKONING"
         },
         prediction: {
-          station_id: bestStation ? bestStation.id : null,
-          station_name: bestStation ? bestStation.name : "Unknown",
-          distance: bestStation ? Math.round(bestDistance) : "N/A",
-          eta_minutes: bestStation ? Math.round(bestETA) : "N/A"
+          station_id: stationId,
+          station_name: stationName,
+          distance: stationDistance,
+          eta_minutes: stationETA
         }
       },
       raw_data: {
-        // ... raw sensor data
         device_id: sensorData.device_id || "UNKNOWN",
         gps_lat: sensorData.gps_lat,
         gps_lon: sensorData.gps_lon,
