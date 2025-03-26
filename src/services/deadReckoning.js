@@ -7,17 +7,20 @@ let lastProcessedData = null;
 let lastDataReceivedTime = Date.now();
 const MAX_DATA_AGE = 10000; // 10 detik
 
+// Tambahkan variabel global untuk status kedatangan
+let arrivalStatus = {
+  isArrived: false,
+  arrivedAtStation: null,
+  nextStation: null,
+  arrivedTime: null,
+  departureCooldown: 60000 // 60 detik cooldown
+};
+
 async function processData(sensorData) {
   try {
     if (!sensorData) return null;
 
     lastDataReceivedTime = Date.now();
-    
-    // Periksa apakah data sensor ini persis sama dengan data terakhir
-    // if (lastProcessedData && isSameData(sensorData, lastProcessedData)) {
-    //   console.log("[DeadReckoning] Duplicate sensor data detected, skipping processing");
-    //   return null; // Skip pemrosesan untuk data duplikat
-    // }
     
     // Pilih kecepatan: gunakan gps_speed jika > 0, jika tidak gunakan accelero_speed
     const speed = sensorData.gps_speed > 0 ? sensorData.gps_speed : sensorData.accelero_speed;
@@ -41,35 +44,78 @@ async function processData(sensorData) {
     
     let currentStation = stationDistances[0]; // Stasiun terdekat
     let nextStation = stationDistances[1] || null; // Stasiun terdekat kedua (jika ada)
+    
+    
+    // Cek kondisi kedatangan dengan logika yang lebih stabil
     let isArrived = false;
     
-    // Cek kondisi kedatangan: kecepatan < 1 km/jam dan jarak < 100 meter
+    // Periksa kondisi kecepatan rendah dan jarak dekat
+    const isSlowSpeed = speed < 2; // Gunakan 2 km/h sebagai batas
+    const isNearStation = currentStation.distance < 100;
     
-    
-    if (speed < 1 && currentStation.distance < 100) {
+    if (isSlowSpeed && isNearStation) {
+      // Kereta baru tiba di stasiun
+      if (!arrivalStatus.isArrived) {
+        console.log(`[DeadReckoning] ARRIVAL DETECTED at station ${currentStation.station.name}! Speed: ${speedKmh.toFixed(2)} km/h, Distance: ${currentStation.distance.toFixed(2)} m`);
+        
+        // Jika sudah tiba, gunakan stasiun berikutnya untuk prediksi
+        if (nextStation) {
+          console.log(`[DeadReckoning] Next station will be ${nextStation.station.name}, distance: ${nextStation.distance.toFixed(2)} m`);
+        } else {
+          console.log(`[DeadReckoning] No next station available, this might be the final destination`);
+        }
+        
+        // Update status kedatangan
+        arrivalStatus = {
+          isArrived: true,
+          arrivedAtStation: currentStation.station.name,
+          nextStation: nextStation ? nextStation.station.name : null,
+          arrivedTime: Date.now(),
+          departureCooldown: 60000
+        };
+      }
       isArrived = true;
-      console.log(`[DeadReckoning] ARRIVAL DETECTED at station ${currentStation.station.name}! Speed: ${speed.toFixed(2)} km/h, Distance: ${currentStation.distance.toFixed(2)} m`);
-      
-      // Jika sudah tiba, gunakan stasiun berikutnya untuk prediksi
-      if (nextStation) {
-        console.log(`[DeadReckoning] Next station will be ${nextStation.station.name}, distance: ${nextStation.distance.toFixed(2)} m`);
+    } else if (arrivalStatus.isArrived) {
+      // Sudah tiba sebelumnya, periksa apakah dalam cooldown
+      if (Date.now() - arrivalStatus.arrivedTime <= arrivalStatus.departureCooldown) {
+        // Masih dalam cooldown, tetap anggap tiba
+        isArrived = true;
+        console.log(`[DeadReckoning] Still in arrival cooldown for ${currentStation.station.name}, ${Math.round((arrivalStatus.departureCooldown - (Date.now() - arrivalStatus.arrivedTime))/1000)}s remaining`);
       } else {
-        console.log(`[DeadReckoning] No next station available, this might be the final destination`);
+        // Cooldown selesai, reset status kedatangan
+        console.log(`[DeadReckoning] Departure detected from station ${arrivalStatus.arrivedAtStation}`);
+        arrivalStatus = {
+          isArrived: false,
+          arrivedAtStation: null,
+          nextStation: null,
+          arrivedTime: null,
+          departureCooldown: 60000
+        };
       }
     }
     
     // Pilih stasiun dan data untuk prediksi
     let stationName, stationId, stationDistance, stationETA;
     
-    if (isArrived && nextStation) {
+    if (isArrived && arrivalStatus.nextStation) {
       // Jika sudah tiba dan ada stasiun berikutnya
-      stationName = `ARRIVED at ${currentStation.station.name}, Next: ${nextStation.station.name}`;
-      stationId = nextStation.station.id;
-      stationDistance = Math.round(nextStation.distance);
-      stationETA = Math.round(nextStation.eta);
+      stationName = `ARRIVED at ${arrivalStatus.arrivedAtStation}, Next: ${arrivalStatus.nextStation}`;
+      
+      // Cari stasiun berikutnya dari list
+      const nextStationObj = stationDistances.find(s => s.station.name === arrivalStatus.nextStation);
+      if (nextStationObj) {
+        stationId = nextStationObj.station.id;
+        stationDistance = Math.round(nextStationObj.distance);
+        stationETA = Math.round(nextStationObj.eta);
+      } else {
+        // Fallback jika stasiun berikutnya tidak ditemukan
+        stationId = nextStation ? nextStation.station.id : currentStation.station.id;
+        stationDistance = Math.round(nextStation ? nextStation.distance : currentStation.distance);
+        stationETA = Math.round(nextStation ? nextStation.eta : 0);
+      }
     } else if (isArrived) {
       // Jika sudah tiba tapi tidak ada stasiun berikutnya
-      stationName = `ARRIVED at ${currentStation.station.name} (Final Station)`;
+      stationName = `ARRIVED at ${arrivalStatus.arrivedAtStation || currentStation.station.name} (Final Station)`;
       stationId = currentStation.station.id;
       stationDistance = Math.round(currentStation.distance);
       stationETA = 0;
@@ -81,15 +127,13 @@ async function processData(sensorData) {
       stationETA = Math.round(currentStation.eta);
     }
     
-    // Buat timestamp dengan presisi tinggi
+    // Kemudian lanjutkan dengan kode yang sama untuk membuat payload
     const waktu = new Date();
     const offset = 7 * 60 * 60 * 1000; // 7 jam dalam milidetik
     const timestamp = new Date(waktu.getTime() + offset).toISOString();
     
-    // Tambahkan unique ID untuk setiap tracking
     const trackingId = `${sensorData.device_id || "UNKNOWN"}_${Date.now()}`;
     
-    // Buat objek finalPayload sesuai format yang diinginkan
     const finalPayload = {
       tracking_id: trackingId,
       device_id: sensorData.device_id || "UNKNOWN",
