@@ -10,6 +10,15 @@ let lastUpdateTime = Date.now();
 const MAX_DATA_AGE = 10000; // 10 detik
 let lastRawDataTime = Date.now();
 
+// Tambahkan status kedatangan dengan persistensi
+let arrivalStatus = {
+  isArrived: false,
+  arrivedAtStation: null,
+  nextStation: null,
+  arrivedTime: null,
+  departureCooldown: 60000 // 60 detik cooldown
+};
+
 async function processData(sensorData) {
   try {
     if (!sensorData) return null;
@@ -59,33 +68,75 @@ async function processData(sensorData) {
     
     let currentStation = stationDistances[0]; // Stasiun terdekat
     let nextStation = stationDistances[1] || null; // Stasiun terdekat kedua (jika ada)
+    
+    // Konversi kecepatan untuk konsistensi jika perlu
+    // Catatan: Pastikan satuan speed sudah konsisten (m/s atau km/h)
+
+    // Cek kondisi kedatangan dengan logika persistensi
     let isArrived = false;
     
-    
-    if (speed < 1 && currentStation.distance < 100) {
+    if (speed < 2 && currentStation.distance < 100) {
+      // Kereta baru tiba di stasiun
+      if (!arrivalStatus.isArrived) {
+        console.log(`[DeadReckoning] ARRIVAL DETECTED at station ${currentStation.station.name}! Speed: ${speed.toFixed(2)} km/h, Distance: ${currentStation.distance.toFixed(2)} m`);
+        
+        // Update status kedatangan
+        arrivalStatus = {
+          isArrived: true,
+          arrivedAtStation: currentStation.station.name,
+          nextStation: nextStation ? nextStation.station.name : null,
+          arrivedTime: Date.now(),
+          departureCooldown: 60000
+        };
+        
+        if (nextStation) {
+          console.log(`[DeadReckoning] Next station will be ${nextStation.station.name}, distance: ${nextStation.distance.toFixed(2)} m`);
+        } else {
+          console.log(`[DeadReckoning] No next station available, this might be the final destination`);
+        }
+      }
       isArrived = true;
-      console.log(`[DeadReckoning] ARRIVAL DETECTED at station ${currentStation.station.name}! Speed: ${speed.toFixed(2)} km/h, Distance: ${currentStation.distance.toFixed(2)} m`);
-      
-      // Jika sudah tiba, gunakan stasiun berikutnya untuk prediksi
-      if (nextStation) {
-        console.log(`[DeadReckoning] Next station will be ${nextStation.station.name}, distance: ${nextStation.distance.toFixed(2)} m`);
+    } else if (arrivalStatus.isArrived) {
+      // Kecepatan meningkat atau jarak berubah, tapi cek cooldown
+      if (Date.now() - arrivalStatus.arrivedTime <= arrivalStatus.departureCooldown) {
+        // Masih dalam cooldown, tetap anggap tiba
+        isArrived = true;
+        console.log(`[DeadReckoning] Still in arrival cooldown for ${arrivalStatus.arrivedAtStation}, ${Math.round((arrivalStatus.departureCooldown - (Date.now() - arrivalStatus.arrivedTime))/1000)}s remaining`);
       } else {
-        console.log(`[DeadReckoning] No next station available, this might be the final destination`);
+        // Cooldown selesai, kereta dianggap sudah berangkat
+        console.log(`[DeadReckoning] Departure detected from station ${arrivalStatus.arrivedAtStation}`);
+        arrivalStatus = {
+          isArrived: false,
+          arrivedAtStation: null,
+          nextStation: null,
+          arrivedTime: null,
+          departureCooldown: 60000
+        };
       }
     }
     
     // Pilih stasiun dan data untuk prediksi
     let stationName, stationId, stationDistance, stationETA;
     
-    if (isArrived && nextStation) {
+    if (isArrived && arrivalStatus.nextStation) {
       // Jika sudah tiba dan ada stasiun berikutnya
-      stationName = `ARRIVED at ${currentStation.station.name}, Next: ${nextStation.station.name}`;
-      stationId = nextStation.station.id;
-      stationDistance = Math.round(nextStation.distance);
-      stationETA = Math.round(nextStation.eta);
+      stationName = `ARRIVED at ${arrivalStatus.arrivedAtStation}, Next: ${arrivalStatus.nextStation}`;
+      
+      // Cari stasiun berikutnya dari list
+      const nextStationObj = stationDistances.find(s => s.station.name === arrivalStatus.nextStation);
+      if (nextStationObj) {
+        stationId = nextStationObj.station.id;
+        stationDistance = Math.round(nextStationObj.distance);
+        stationETA = Math.round(nextStationObj.eta);
+      } else {
+        // Fallback jika stasiun berikutnya tidak ditemukan
+        stationId = nextStation ? nextStation.station.id : currentStation.station.id;
+        stationDistance = Math.round(nextStation ? nextStation.distance : currentStation.distance);
+        stationETA = Math.round(nextStation ? nextStation.eta : 0);
+      }
     } else if (isArrived) {
       // Jika sudah tiba tapi tidak ada stasiun berikutnya
-      stationName = `ARRIVED at ${currentStation.station.name} (Final Station)`;
+      stationName = `ARRIVED at ${arrivalStatus.arrivedAtStation || currentStation.station.name} (Final Station)`;
       stationId = currentStation.station.id;
       stationDistance = Math.round(currentStation.distance);
       stationETA = 0;
@@ -142,7 +193,7 @@ async function processData(sensorData) {
   }
 }
 
-// Tambahkan fungsi untuk mengecek keaktifan koneksi
+// Fungsi untuk mengecek keaktifan koneksi
 function isConnectionActive() {
   return (Date.now() - lastRawDataTime) < MAX_DATA_AGE;
 }
@@ -151,6 +202,12 @@ function isConnectionActive() {
  * Contoh fungsi sederhana untuk estimasi posisi dari IMU
  */
 function estimatePositionFromIMU(lastPos, sensorData, deltaTime) {
+  // Jika waktu berlalu terlalu lama, jangan lakukan estimasi
+  if (deltaTime > 30) { // lebih dari 30 detik tanpa data baru
+    console.log("[DeadReckoning] Too much time elapsed since last update, skipping estimation");
+    return lastPos; // Kembalikan posisi terakhir tanpa estimasi
+  }
+  
   const speed = sensorData.accelero_speed || 0;
   const headingRad = (sensorData.magnetometer_heading || 0) * Math.PI / 180;
 
