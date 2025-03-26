@@ -56,7 +56,7 @@ async function processData(sensorData) {
     if (isSlowSpeed && isNearStation) {
       // Kereta baru tiba di stasiun
       if (!arrivalStatus.isArrived) {
-        console.log(`[DeadReckoning] ARRIVAL DETECTED at station ${currentStation.station.name}! Speed: ${speedKmh.toFixed(2)} km/h, Distance: ${currentStation.distance.toFixed(2)} m`);
+        console.log(`[DeadReckoning] ARRIVAL DETECTED at station ${currentStation.station.name}! Speed: ${speed.toFixed(2)} km/h, Distance: ${currentStation.distance.toFixed(2)} m`);
         
         // Jika sudah tiba, gunakan stasiun berikutnya untuk prediksi
         if (nextStation) {
